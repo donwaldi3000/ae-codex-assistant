@@ -1,0 +1,9 @@
+{
+  "id": "op_rig_001",
+  "command": "rig.create2D",
+  "scope": "ActiveComp",
+  "payload": {
+    "targetLayers": [1, 2, 3],
+    "namingPrefix": "CHAR_A"
+  }
+}

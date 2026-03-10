@@ -4,6 +4,7 @@ from typing import Any
 
 import requests
 
+from ae_cli.agent_contract import CommandEnvelope, Scope
 from ae_cli.client import AEBridgeError, AEClient
 
 
@@ -634,3 +635,78 @@ def test_delete_comp_posts_expected_payload(monkeypatch) -> None:
     assert captured["url"] == "http://127.0.0.1:8080/delete-comp"
     assert captured["timeout"] == 5.0
     assert captured["json"] == {"compName": "Main"}
+
+
+def test_project_scan_posts_expected_payload(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, json: Any, timeout: float) -> DummyResponse:
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse({"status": "success", "data": {"comps": []}})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client = AEClient(base_url="http://127.0.0.1:8080", timeout=5.0)
+    client.project_scan()
+
+    assert captured["url"] == "http://127.0.0.1:8080/agent/project-scan"
+    assert captured["timeout"] == 5.0
+    assert captured["json"] == {
+        "scope": "ActiveComp",
+        "includeExpressions": True,
+    }
+
+
+def test_project_find_posts_expected_payload(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, json: Any, timeout: float) -> DummyResponse:
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse({"status": "success", "data": {"matches": []}})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client = AEClient(base_url="http://127.0.0.1:8080", timeout=5.0)
+    client.project_find(query="CTRL_", scope=Scope.PROJECT, types=["layer"], regex=True)
+
+    assert captured["url"] == "http://127.0.0.1:8080/agent/project-find"
+    assert captured["timeout"] == 5.0
+    assert captured["json"] == {
+        "query": "CTRL_",
+        "scope": "Project",
+        "types": ["layer"],
+        "regex": True,
+    }
+
+
+def test_execute_agent_command_posts_expected_payload(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, json: Any, timeout: float) -> DummyResponse:
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse({"status": "success", "data": {"operationId": "op_1"}})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client = AEClient(base_url="http://127.0.0.1:8080", timeout=5.0)
+    client.execute_agent_command(
+        envelope=CommandEnvelope(
+            id="op_1",
+            command="project.scan",
+            payload={},
+        ),
+        dry_run=True,
+    )
+
+    assert captured["url"] == "http://127.0.0.1:8080/agent/execute"
+    assert captured["timeout"] == 5.0
+    assert captured["json"]["dryRun"] is True
+    assert captured["json"]["approved"] is False
+    assert captured["json"]["envelope"]["id"] == "op_1"
+    assert captured["json"]["envelope"]["command"] == "project.scan"

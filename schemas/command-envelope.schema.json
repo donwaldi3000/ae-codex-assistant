@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ae-agent-skills.dev/schemas/command-envelope.schema.json",
+  "title": "CommandEnvelope",
+  "type": "object",
+  "required": ["command", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "project.scan",
+        "project.find",
+        "expression.set",
+        "expression.fix",
+        "rig.create2D",
+        "layers.batchRename",
+        "comp.precomp",
+        "render.setupQueue"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["Selection", "ActiveComp", "Project"]
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "requiresApproval": {
+      "type": "boolean"
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

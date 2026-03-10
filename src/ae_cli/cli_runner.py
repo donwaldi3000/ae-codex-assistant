@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import requests
 
+from .agent_contract import ApprovalOverride, CommandEnvelope, RiskLevel, RiskMode, Scope
 from .client import AEBridgeError, AEClient
 
 
@@ -286,6 +287,80 @@ def _run_apply_scene(client: AEClient, args: argparse.Namespace) -> None:
     )
 
 
+def _run_project_scan(client: AEClient, args: argparse.Namespace) -> None:
+    _print_json(
+        client.project_scan(
+            scope=Scope(args.scope),
+            include_expressions=not args.exclude_expressions,
+        )
+    )
+
+
+def _run_project_find(client: AEClient, args: argparse.Namespace) -> None:
+    _print_json(
+        client.project_find(
+            query=args.query,
+            scope=Scope(args.scope),
+            types=args.type,
+            regex=args.regex,
+        )
+    )
+
+
+def _run_agent_settings(client: AEClient, args: argparse.Namespace) -> None:
+    if args.risk_mode or args.scope or args.approval_override:
+        _print_json(
+            client.set_agent_settings(
+                risk_mode=RiskMode(args.risk_mode) if args.risk_mode else None,
+                scope=Scope(args.scope) if args.scope else None,
+                approval_override=ApprovalOverride(args.approval_override) if args.approval_override else None,
+            )
+        )
+        return
+    _print_json(client.get_agent_settings())
+
+
+def _read_envelope_payload(args: argparse.Namespace) -> dict[str, Any]:
+    raw = args.envelope
+    if args.envelope_file:
+        raw = Path(args.envelope_file).read_text(encoding="utf-8")
+    if raw is None:
+        raise ValueError("Either --envelope or --envelope-file is required.")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON for envelope: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Envelope JSON must be an object.")
+    return payload
+
+
+def _run_command_envelope(client: AEClient, args: argparse.Namespace) -> None:
+    envelope_payload = _read_envelope_payload(args)
+    if "command" not in envelope_payload:
+        raise ValueError("Envelope must include command.")
+    envelope_id = envelope_payload.get("id")
+    envelope = CommandEnvelope(
+        id=str(envelope_id) if envelope_id else CommandEnvelope(command=str(envelope_payload["command"])).id,
+        command=str(envelope_payload["command"]),
+        payload=dict(envelope_payload.get("payload", {})),
+        scope=Scope(envelope_payload.get("scope", "ActiveComp")),
+    )
+    if "risk" in envelope_payload:
+        envelope.risk = RiskLevel(envelope_payload["risk"])
+    if "requiresApproval" in envelope_payload:
+        envelope.requires_approval = bool(envelope_payload["requiresApproval"])
+    _print_json(
+        client.execute_agent_command(
+            envelope=envelope,
+            dry_run=args.dry_run,
+            approved=args.approved,
+            risk_mode=RiskMode(args.risk_mode) if args.risk_mode else None,
+            approval_override=ApprovalOverride(args.approval_override) if args.approval_override else None,
+        )
+    )
+
+
 CommandHandler = Callable[[AEClient, argparse.Namespace], None]
 
 COMMAND_HANDLERS: dict[str, CommandHandler] = {
@@ -315,6 +390,10 @@ COMMAND_HANDLERS: dict[str, CommandHandler] = {
     "delete-layer": _run_delete_layer,
     "delete-comp": _run_delete_comp,
     "apply-scene": _run_apply_scene,
+    "project-scan": _run_project_scan,
+    "project-find": _run_project_find,
+    "agent-settings": _run_agent_settings,
+    "run-command": _run_command_envelope,
 }
 
 

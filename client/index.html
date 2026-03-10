@@ -27,6 +27,39 @@
             font-size: 12px;
             color: #B0B0B0;
         }
+        .controls {
+            padding: 8px 10px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            align-items: center;
+        }
+        .control {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        select {
+            background: #202020;
+            color: #E0E0E0;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 2px 4px;
+        }
+        button {
+            background: #2f6fdb;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background: #555;
+            cursor: default;
+        }
         #log {
             flex-grow: 1;
             box-sizing: border-box;
@@ -46,6 +79,33 @@
         <span>ae-agent-skill Logs</span>
         <span class="version" id="panel-version">v-</span>
     </h1>
+    <div class="controls">
+        <div class="control">
+            <label for="risk-mode">Risk</label>
+            <select id="risk-mode">
+                <option value="Safe">Safe</option>
+                <option value="Balanced" selected>Balanced</option>
+                <option value="Fast">Fast</option>
+            </select>
+        </div>
+        <div class="control">
+            <label for="scope-mode">Scope</label>
+            <select id="scope-mode">
+                <option value="Selection">Selection</option>
+                <option value="ActiveComp" selected>Active Comp</option>
+                <option value="Project">Project</option>
+            </select>
+        </div>
+        <div class="control">
+            <label for="approval-override">Override</label>
+            <select id="approval-override">
+                <option value="Default" selected>Default</option>
+                <option value="AskThisTime">Ask this time</option>
+                <option value="AutoApplyThisTime">Auto apply this time</option>
+            </select>
+        </div>
+        <button id="save-agent-settings">Save</button>
+    </div>
     <textarea id="log" readonly></textarea>
 
     <script type="text/javascript" src="./CSInterface.js"></script>
@@ -57,6 +117,7 @@
     <script type="text/javascript" src="./lib/request_handlers_essential.js"></script>
     <script type="text/javascript" src="./lib/request_handlers_timeline.js"></script>
     <script type="text/javascript" src="./lib/request_handlers_layer_structure.js"></script>
+    <script type="text/javascript" src="./lib/request_handlers_agent.js"></script>
     <script type="text/javascript" src="./lib/request_handlers.js"></script>
     <script type="text/javascript" src="./lib/server.js"></script>
     <script type="text/javascript" src="./main.js"></script>

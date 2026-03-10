@@ -467,6 +467,10 @@ function routeRequest(req, res) {
         && routeLayerStructureRequest(pathname, method, req, res)) {
         return;
     }
+    if (typeof routeAgentRequest === 'function'
+        && routeAgentRequest(pathname, method, req, res)) {
+        return;
+    }
 
     handleNotFound(req, res);
 }

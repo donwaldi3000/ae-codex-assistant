@@ -396,3 +396,60 @@ def test_run_command_returns_2_for_unknown_command(capsys) -> None:
     captured = capsys.readouterr()
     assert code == 2
     assert "Unknown command" in captured.err
+
+
+def test_build_parser_parses_project_scan() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "project-scan",
+            "--scope",
+            "Project",
+            "--exclude-expressions",
+        ]
+    )
+    assert args.command == "project-scan"
+    assert args.scope == "Project"
+    assert args.exclude_expressions is True
+
+
+def test_build_parser_parses_project_find() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "project-find",
+            "--query",
+            "CTRL_",
+            "--scope",
+            "Project",
+            "--type",
+            "layer",
+            "--regex",
+        ]
+    )
+    assert args.command == "project-find"
+    assert args.query == "CTRL_"
+    assert args.scope == "Project"
+    assert args.type == ["layer"]
+    assert args.regex is True
+
+
+def test_build_parser_parses_run_command() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "run-command",
+            "--envelope-file",
+            "examples/envelope.expression.set.json",
+            "--dry-run",
+            "--risk-mode",
+            "Balanced",
+            "--approval-override",
+            "Default",
+        ]
+    )
+    assert args.command == "run-command"
+    assert args.envelope_file == "examples/envelope.expression.set.json"
+    assert args.dry_run is True
+    assert args.risk_mode == "Balanced"
+    assert args.approval_override == "Default"

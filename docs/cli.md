@@ -47,3 +47,27 @@ Schema:
 - `merge` (default): upsert only
 - `replace-managed`: remove unmanaged `aeSceneId:*` leftovers, then apply
 - `clear-all`: clear comp, then apply
+
+## Agent operation workflow
+
+```bash
+# Inspect panel-side settings (risk/scope/override)
+ae-cli agent-settings
+
+# Update settings
+ae-cli agent-settings --risk-mode Balanced --scope ActiveComp --approval-override Default
+
+# Build project graph snapshot
+ae-cli project-scan --scope Project
+
+# Search in project graph
+ae-cli project-find --query "CTRL_" --scope Project --type layer
+
+# Execute a structured command envelope
+ae-cli run-command --envelope-file ./examples/envelope.expression.set.json --dry-run
+ae-cli run-command --envelope-file ./examples/envelope.expression.set.json --approved
+```
+
+Envelope schema:
+
+- `schemas/command-envelope.schema.json`

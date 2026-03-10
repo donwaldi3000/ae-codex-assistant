@@ -8,6 +8,8 @@ from typing import Any, Dict, List
 
 import requests
 
+from .agent_contract import ApprovalOverride, CommandEnvelope, RiskMode, Scope
+
 
 class AEBridgeError(RuntimeError):
     """Raised when the CEP bridge returns an error payload."""
@@ -599,6 +601,89 @@ class AEClient:
                 "validateOnly": validate_only,
                 "mode": mode,
             },
+            timeout=self.timeout,
+        )
+        return self._handle_response(response)
+
+    def get_agent_settings(self) -> Dict[str, Any]:
+        """Return active panel-side risk/scope settings."""
+        response = requests.get(self._url("/agent/settings"), timeout=self.timeout)
+        return self._handle_response(response)
+
+    def set_agent_settings(
+        self,
+        risk_mode: RiskMode | None = None,
+        scope: Scope | None = None,
+        approval_override: ApprovalOverride | None = None,
+    ) -> Dict[str, Any]:
+        """Update panel-side risk/scope settings."""
+        payload: Dict[str, Any] = {}
+        if risk_mode is not None:
+            payload["riskMode"] = risk_mode.value
+        if scope is not None:
+            payload["scope"] = scope.value
+        if approval_override is not None:
+            payload["approvalOverride"] = approval_override.value
+        response = requests.post(
+            self._url("/agent/settings"),
+            json=payload,
+            timeout=self.timeout,
+        )
+        return self._handle_response(response)
+
+    def project_scan(self, scope: Scope = Scope.ACTIVE_COMP, include_expressions: bool = True) -> Dict[str, Any]:
+        """Fetch a project graph snapshot from the bridge."""
+        response = requests.post(
+            self._url("/agent/project-scan"),
+            json={
+                "scope": scope.value,
+                "includeExpressions": include_expressions,
+            },
+            timeout=self.timeout,
+        )
+        return self._handle_response(response)
+
+    def project_find(
+        self,
+        query: str,
+        scope: Scope = Scope.ACTIVE_COMP,
+        types: List[str] | None = None,
+        regex: bool = False,
+    ) -> Dict[str, Any]:
+        """Search project entities by query."""
+        response = requests.post(
+            self._url("/agent/project-find"),
+            json={
+                "query": query,
+                "scope": scope.value,
+                "types": types or [],
+                "regex": regex,
+            },
+            timeout=self.timeout,
+        )
+        return self._handle_response(response)
+
+    def execute_agent_command(
+        self,
+        envelope: CommandEnvelope,
+        dry_run: bool = False,
+        approved: bool = False,
+        risk_mode: RiskMode | None = None,
+        approval_override: ApprovalOverride | None = None,
+    ) -> Dict[str, Any]:
+        """Execute a validated agent command envelope."""
+        payload: Dict[str, Any] = {
+            "envelope": envelope.to_dict(),
+            "dryRun": dry_run,
+            "approved": approved,
+        }
+        if risk_mode is not None:
+            payload["riskMode"] = risk_mode.value
+        if approval_override is not None:
+            payload["approvalOverride"] = approval_override.value
+        response = requests.post(
+            self._url("/agent/execute"),
+            json=payload,
             timeout=self.timeout,
         )
         return self._handle_response(response)

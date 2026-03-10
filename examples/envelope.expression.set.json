@@ -1,0 +1,12 @@
+{
+  "id": "op_expr_001",
+  "command": "expression.set",
+  "scope": "ActiveComp",
+  "payload": {
+    "target": {
+      "layerId": 1,
+      "propertyPath": "ADBE Transform Group.ADBE Position"
+    },
+    "expression": "value + [0, Math.sin(time*4)*20]"
+  }
+}

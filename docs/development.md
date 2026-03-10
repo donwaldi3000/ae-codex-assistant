@@ -25,6 +25,11 @@ python3 -m pip install -e ".[dev]"
 PYTHONPATH=src pytest
 ```
 
+Cross-platform bootstrap helpers:
+
+- macOS: `scripts/bootstrap/bootstrap-mac.sh`
+- Windows (PowerShell): `scripts/bootstrap/bootstrap-windows.ps1`
+
 ## Project structure
 
 ### Python CLI
@@ -32,6 +37,7 @@ PYTHONPATH=src pytest
 - `src/ae_cli/cli_parser.py`
 - `src/ae_cli/cli_runner.py`
 - `src/ae_cli/client.py`
+- `src/ae_cli/agent_contract.py`
 - `src/ae_cli/main.py`
 
 ### ExtendScript host
@@ -46,6 +52,7 @@ PYTHONPATH=src pytest
 - `host/lib/mutation_timeline_handlers.jsx`
 - `host/lib/mutation_layer_structure_handlers.jsx`
 - `host/lib/mutation_scene_handlers.jsx`
+- `host/lib/agent_handlers.jsx`
 
 ### CEP panel client
 
@@ -58,5 +65,6 @@ PYTHONPATH=src pytest
 - `client/lib/request_handlers_essential.js`
 - `client/lib/request_handlers_timeline.js`
 - `client/lib/request_handlers_layer_structure.js`
+- `client/lib/request_handlers_agent.js`
 - `client/lib/request_handlers.js`
 - `client/lib/server.js`

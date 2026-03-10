@@ -42,5 +42,26 @@ and add a 0.5-second fade-in animation.
 
 - CLI usage: [docs/cli.md](docs/cli.md)
 - Development: [docs/development.md](docs/development.md)
+- Command envelope schema: [schemas/command-envelope.schema.json](schemas/command-envelope.schema.json)
 - Declarative skill source: [.codex/skills/aftereffects-declarative/SKILL.md](.codex/skills/aftereffects-declarative/SKILL.md)
 - Legacy CLI skill source: [.codex/skills/aftereffects-cli/SKILL.md](.codex/skills/aftereffects-cli/SKILL.md)
+
+## Agent-safe operations (MVP)
+
+The panel now exposes risk/scope controls and the bridge provides structured execution endpoints:
+
+- `POST /agent/project-scan`
+- `POST /agent/project-find`
+- `GET/POST /agent/settings`
+- `POST /agent/execute`
+
+Supported command envelope `command` values:
+
+- `project.scan`
+- `project.find`
+- `expression.set`
+- `expression.fix`
+- `rig.create2D`
+- `layers.batchRename`
+- `comp.precomp`
+- `render.setupQueue`

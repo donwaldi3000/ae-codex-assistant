@@ -313,4 +313,78 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    project_scan_parser = subparsers.add_parser(
+        "project-scan",
+        help="Build a project graph snapshot",
+    )
+    project_scan_parser.add_argument(
+        "--scope",
+        choices=["Selection", "ActiveComp", "Project"],
+        default="ActiveComp",
+    )
+    project_scan_parser.add_argument(
+        "--exclude-expressions",
+        action="store_true",
+        help="Exclude expression diagnostics from the snapshot",
+    )
+
+    project_find_parser = subparsers.add_parser(
+        "project-find",
+        help="Search entities in the project graph",
+    )
+    project_find_parser.add_argument("--query", required=True)
+    project_find_parser.add_argument(
+        "--scope",
+        choices=["Selection", "ActiveComp", "Project"],
+        default="ActiveComp",
+    )
+    project_find_parser.add_argument(
+        "--type",
+        action="append",
+        default=[],
+        help="Entity type filter (project-item, comp, layer, expression-error)",
+    )
+    project_find_parser.add_argument("--regex", action="store_true")
+
+    agent_settings_parser = subparsers.add_parser(
+        "agent-settings",
+        help="Get or set panel risk/scope settings",
+    )
+    agent_settings_parser.add_argument(
+        "--risk-mode",
+        choices=["Safe", "Balanced", "Fast"],
+    )
+    agent_settings_parser.add_argument(
+        "--scope",
+        choices=["Selection", "ActiveComp", "Project"],
+    )
+    agent_settings_parser.add_argument(
+        "--approval-override",
+        choices=["Default", "AskThisTime", "AutoApplyThisTime"],
+    )
+
+    run_command_parser = subparsers.add_parser(
+        "run-command",
+        help="Execute a structured CommandEnvelope",
+    )
+    envelope_group = run_command_parser.add_mutually_exclusive_group(required=True)
+    envelope_group.add_argument(
+        "--envelope",
+        help="Inline JSON envelope payload",
+    )
+    envelope_group.add_argument(
+        "--envelope-file",
+        help="Path to a UTF-8 JSON envelope payload",
+    )
+    run_command_parser.add_argument("--dry-run", action="store_true")
+    run_command_parser.add_argument("--approved", action="store_true")
+    run_command_parser.add_argument(
+        "--risk-mode",
+        choices=["Safe", "Balanced", "Fast"],
+    )
+    run_command_parser.add_argument(
+        "--approval-override",
+        choices=["Default", "AskThisTime", "AutoApplyThisTime"],
+    )
+
     return parser
