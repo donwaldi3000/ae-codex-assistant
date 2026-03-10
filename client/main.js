@@ -1,5 +1,5 @@
 const AGENT_SETTINGS_KEY = 'ae-agent-settings-v1';
-const OPENAI_SETTINGS_KEY = 'ae-openai-settings-v1';
+const CODEX_SETTINGS_KEY = 'ae-codex-settings-v1';
 
 const panelState = {
     operations: [],
@@ -37,32 +37,26 @@ function persistPanelSettings(settings) {
     }
 }
 
-function loadOpenAISettings() {
+function loadCodexSettings() {
     try {
-        const raw = localStorage.getItem(OPENAI_SETTINGS_KEY);
-        if (!raw) return { model: 'gpt-5-mini', apiKey: '', rememberKey: false };
+        const raw = localStorage.getItem(CODEX_SETTINGS_KEY);
+        if (!raw) return { model: 'gpt-5-mini' };
         const parsed = JSON.parse(raw);
         return {
             model: parsed.model || 'gpt-5-mini',
-            apiKey: parsed.apiKey || '',
-            rememberKey: parsed.rememberKey === true,
         };
     } catch (error) {
-        log(`Failed to load OpenAI settings: ${error.toString()}`);
-        return { model: 'gpt-5-mini', apiKey: '', rememberKey: false };
+        log(`Failed to load Codex settings: ${error.toString()}`);
+        return { model: 'gpt-5-mini' };
     }
 }
 
-function persistOpenAISettings(settings) {
+function persistCodexSettings(settings) {
     try {
-        const payload = {
-            model: settings.model || 'gpt-5-mini',
-            rememberKey: settings.rememberKey === true,
-        };
-        payload.apiKey = payload.rememberKey ? (settings.apiKey || '') : '';
-        localStorage.setItem(OPENAI_SETTINGS_KEY, JSON.stringify(payload));
+        const payload = { model: settings.model || 'gpt-5-mini' };
+        localStorage.setItem(CODEX_SETTINGS_KEY, JSON.stringify(payload));
     } catch (error) {
-        log(`Failed to persist OpenAI settings: ${error.toString()}`);
+        log(`Failed to persist Codex settings: ${error.toString()}`);
     }
 }
 
@@ -74,11 +68,9 @@ function collectPanelSettings() {
     };
 }
 
-function collectOpenAISettings() {
+function collectCodexSettings() {
     return {
-        model: (document.getElementById('openai-model') || {}).value || 'gpt-5-mini',
-        apiKey: (document.getElementById('openai-key') || {}).value || '',
-        rememberKey: ((document.getElementById('remember-key') || {}).checked) === true,
+        model: (document.getElementById('codex-model') || {}).value || 'gpt-5-mini',
     };
 }
 
@@ -91,13 +83,16 @@ function applyPanelSettings(settings) {
     if (overrideSelect) overrideSelect.value = settings.approvalOverride || 'Default';
 }
 
-function applyOpenAISettings(settings) {
-    const modelInput = document.getElementById('openai-model');
-    const apiKeyInput = document.getElementById('openai-key');
-    const remember = document.getElementById('remember-key');
+function applyCodexSettings(settings) {
+    const modelInput = document.getElementById('codex-model');
     if (modelInput) modelInput.value = settings.model || 'gpt-5-mini';
-    if (apiKeyInput) apiKeyInput.value = settings.apiKey || '';
-    if (remember) remember.checked = settings.rememberKey === true;
+}
+
+function setCodexStatus(text) {
+    const statusEl = document.getElementById('codex-login-status');
+    if (statusEl) {
+        statusEl.textContent = text;
+    }
 }
 
 function setResultsText(text) {
@@ -155,6 +150,49 @@ function bridgeRequest(pathname, body) {
         );
         request.on('error', reject);
         request.write(payload);
+        request.end();
+    });
+}
+
+function bridgeGet(pathname) {
+    return new Promise((resolve, reject) => {
+        if (!nodeReady) {
+            reject(new Error('CEP Node runtime is disabled.'));
+            return;
+        }
+        const request = http.request(
+            {
+                hostname: '127.0.0.1',
+                port: 8080,
+                path: pathname,
+                method: 'GET',
+            },
+            (response) => {
+                let raw = '';
+                response.on('data', (chunk) => {
+                    raw += chunk.toString();
+                });
+                response.on('end', () => {
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(raw);
+                    } catch (error) {
+                        reject(new Error(`Failed to parse bridge response: ${error.toString()}`));
+                        return;
+                    }
+                    if (response.statusCode && response.statusCode >= 400) {
+                        reject(new Error(parsed.message || `Bridge error (${response.statusCode})`));
+                        return;
+                    }
+                    if (parsed.status !== 'success') {
+                        reject(new Error(parsed.message || 'Bridge request failed'));
+                        return;
+                    }
+                    resolve(parsed.data);
+                });
+            },
+        );
+        request.on('error', reject);
         request.end();
     });
 }
@@ -261,24 +299,19 @@ async function runOperations(dryRun) {
 
 async function generatePlanFromPrompt() {
     const settings = collectPanelSettings();
-    const openai = collectOpenAISettings();
+    const codex = collectCodexSettings();
     const promptEl = document.getElementById('prompt');
     const prompt = promptEl ? promptEl.value : '';
     if (!prompt || prompt.trim().length === 0) {
         setResultsText('Prompt is empty.');
         return;
     }
-    if (!openai.apiKey || openai.apiKey.trim().length === 0) {
-        setResultsText('OpenAI API key is required.');
-        return;
-    }
-    persistOpenAISettings(openai);
+    persistCodexSettings(codex);
     setResultsText('Generating plan...');
     try {
         const data = await bridgeRequest('/agent/generate-plan', {
             prompt,
-            model: openai.model,
-            apiKey: openai.apiKey,
+            model: codex.model,
             scope: settings.scope,
         });
         panelState.operations = [];
@@ -295,6 +328,16 @@ async function generatePlanFromPrompt() {
         log(`Generated plan with ${panelState.operations.length} operation(s).`);
     } catch (error) {
         setResultsText(`Plan generation failed: ${error.toString()}`);
+    }
+}
+
+async function refreshCodexStatus() {
+    setCodexStatus('Checking...');
+    try {
+        const data = await bridgeGet('/agent/codex-status');
+        setCodexStatus(data.statusText || 'Unknown');
+    } catch (error) {
+        setCodexStatus(`Not ready (${error.toString()})`);
     }
 }
 
@@ -317,9 +360,9 @@ async function refreshScan() {
 function initAgentControls() {
     const saveButton = document.getElementById('save-agent-settings');
     const settings = loadPanelSettings();
-    const openai = loadOpenAISettings();
+    const codex = loadCodexSettings();
     applyPanelSettings(settings);
-    applyOpenAISettings(openai);
+    applyCodexSettings(codex);
 
     if (saveButton) {
         saveButton.addEventListener('click', async () => {
@@ -372,6 +415,12 @@ function initAgentControls() {
             renderOperations();
         });
     }
+    const codexStatusButton = document.getElementById('check-codex-login');
+    if (codexStatusButton) {
+        codexStatusButton.addEventListener('click', () => {
+            refreshCodexStatus();
+        });
+    }
 }
 
 startBridgeServer();
@@ -379,3 +428,4 @@ initAgentControls();
 syncPanelSettingsToBridge(loadPanelSettings()).catch((error) => {
     log(`Initial settings sync failed: ${error.toString()}`);
 });
+refreshCodexStatus();

@@ -342,41 +342,49 @@ function handleExecuteAgentCommand(req, res) {
     });
 }
 
-function readResponseBody(response, callback) {
-    let raw = '';
-    response.on('data', (chunk) => {
-        raw += chunk.toString();
-    });
-    response.on('end', () => {
-        callback(raw);
-    });
-}
-
-function parseOpenAIPlanPayload(payload) {
-    if (!payload || typeof payload !== 'object') {
-        return null;
-    }
-    if (typeof payload.output_text === 'string' && payload.output_text.trim().length > 0) {
-        return payload.output_text.trim();
-    }
-    if (Array.isArray(payload.output)) {
-        let textOut = '';
-        for (let i = 0; i < payload.output.length; i += 1) {
-            const entry = payload.output[i];
-            if (!entry || !Array.isArray(entry.content)) continue;
-            for (let j = 0; j < entry.content.length; j += 1) {
-                const item = entry.content[j];
-                if (item && typeof item.text === 'string') {
-                    textOut += item.text;
-                }
-            }
-        }
-        if (textOut.trim().length > 0) {
-            return textOut.trim();
-        }
-    }
-    return null;
-}
+const CODEX_PLAN_SCHEMA = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    additionalProperties: false,
+    required: ['summary', 'operations'],
+    properties: {
+        summary: { type: 'string' },
+        operations: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['command', 'scope', 'payload'],
+                properties: {
+                    id: { type: 'string' },
+                    command: {
+                        type: 'string',
+                        enum: [
+                            'project.scan',
+                            'project.find',
+                            'expression.set',
+                            'expression.fix',
+                            'rig.create2D',
+                            'layers.batchRename',
+                            'comp.precomp',
+                            'render.setupQueue',
+                        ],
+                    },
+                    scope: {
+                        type: 'string',
+                        enum: ['Selection', 'ActiveComp', 'Project'],
+                    },
+                    risk: {
+                        type: 'string',
+                        enum: ['low', 'medium', 'high'],
+                    },
+                    requiresApproval: { type: 'boolean' },
+                    payload: { type: 'object' },
+                },
+            },
+        },
+    },
+};
 
 function parseJsonFromModelText(rawText) {
     if (!rawText || typeof rawText !== 'string') return null;
@@ -400,7 +408,7 @@ function parseJsonFromModelText(rawText) {
     return null;
 }
 
-function buildOpenAIPlanningPrompt(userPrompt, snapshot, settings) {
+function buildCodexPlanningPrompt(userPrompt, snapshot, settings) {
     const compactSnapshot = JSON.stringify(snapshot);
     const snapshotMaxChars = 120000;
     const snapshotText = compactSnapshot.length > snapshotMaxChars
@@ -409,11 +417,10 @@ function buildOpenAIPlanningPrompt(userPrompt, snapshot, settings) {
 
     return [
         'You are an After Effects agent planner.',
-        'Return ONLY JSON with this exact top-level shape:',
-        '{"summary":"...","operations":[{"command":"...","scope":"Selection|ActiveComp|Project","payload":{}}]}',
+        'Output must be valid JSON matching the provided schema.',
         'Allowed command values only:',
         'project.scan, project.find, expression.set, expression.fix, rig.create2D, layers.batchRename, comp.precomp, render.setupQueue',
-        'Do not include markdown, prose, comments, or unsupported commands.',
+        'Do not include markdown, comments, or unsupported commands.',
         `Risk mode: ${settings.riskMode}, scope default: ${settings.scope}.`,
         'User request:',
         userPrompt,
@@ -422,52 +429,93 @@ function buildOpenAIPlanningPrompt(userPrompt, snapshot, settings) {
     ].join('\n');
 }
 
-function requestOpenAIPlan(apiKey, model, promptText, callback) {
-    const payload = JSON.stringify({
-        model,
-        input: promptText,
+function runCodexPlanner(promptText, model, callback) {
+    if (!childProcess || !fs || !path || !os) {
+        callback(new Error('Node child process runtime is unavailable.'));
+        return;
+    }
+    const nonce = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const schemaPath = path.join(os.tmpdir(), `ae_codex_plan_schema_${nonce}.json`);
+    const outputPath = path.join(os.tmpdir(), `ae_codex_plan_output_${nonce}.txt`);
+    try {
+        fs.writeFileSync(schemaPath, JSON.stringify(CODEX_PLAN_SCHEMA, null, 2), 'utf8');
+    } catch (error) {
+        callback(new Error(`Failed to write temp schema file: ${error.toString()}`));
+        return;
+    }
+
+    const args = [
+        'exec',
+        '-',
+        '--skip-git-repo-check',
+        '--sandbox',
+        'read-only',
+        '--output-schema',
+        schemaPath,
+        '--output-last-message',
+        outputPath,
+        '--cd',
+        extensionRoot,
+    ];
+    if (model && typeof model === 'string' && model.trim().length > 0) {
+        args.push('--model', model.trim());
+    }
+
+    let stderrText = '';
+    const proc = childProcess.spawn('codex', args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const request = https.request(
-        {
-            hostname: 'api.openai.com',
-            path: '/v1/responses',
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(payload),
-            },
-        },
-        (response) => {
-            readResponseBody(response, (body) => {
-                if (response.statusCode && response.statusCode >= 400) {
-                    callback(new Error(`OpenAI API error (${response.statusCode}): ${body}`));
-                    return;
-                }
-                let parsed;
-                try {
-                    parsed = JSON.parse(body);
-                } catch (error) {
-                    callback(new Error(`Failed to parse OpenAI response JSON: ${error.toString()}`));
-                    return;
-                }
-                const modelText = parseOpenAIPlanPayload(parsed);
-                if (!modelText) {
-                    callback(new Error('OpenAI response did not include output text.'));
-                    return;
-                }
-                const planObject = parseJsonFromModelText(modelText);
-                if (!planObject) {
-                    callback(new Error('Model output was not valid JSON plan.'));
-                    return;
-                }
-                callback(null, planObject);
-            });
-        },
-    );
-    request.on('error', (error) => callback(error));
-    request.write(payload);
-    request.end();
+    proc.stderr.on('data', (chunk) => {
+        stderrText += chunk.toString();
+    });
+    proc.on('error', (error) => {
+        callback(new Error(`Failed to start codex exec: ${error.toString()}`));
+    });
+    proc.on('close', (code) => {
+        let cleanupError = null;
+        try {
+            if (fs.existsSync(schemaPath)) fs.unlinkSync(schemaPath);
+        } catch (error) {
+            cleanupError = error;
+        }
+        if (code !== 0) {
+            callback(new Error(`codex exec failed (${code}). ${stderrText}`));
+            return;
+        }
+        let text;
+        try {
+            text = fs.readFileSync(outputPath, 'utf8');
+            fs.unlinkSync(outputPath);
+        } catch (error) {
+            callback(new Error(`Failed to read codex output: ${error.toString()}`));
+            return;
+        }
+        if (cleanupError) {
+            log(`Warning: failed to cleanup schema temp file: ${cleanupError.toString()}`);
+        }
+        const planObject = parseJsonFromModelText(text);
+        if (!planObject) {
+            callback(new Error('Codex output did not contain valid JSON.'));
+            return;
+        }
+        callback(null, planObject);
+    });
+    proc.stdin.write(promptText);
+    proc.stdin.end();
+}
+
+function getCodexLoginStatus(callback) {
+    if (!childProcess) {
+        callback(new Error('Node child process runtime is unavailable.'));
+        return;
+    }
+    childProcess.execFile('codex', ['login', 'status'], (error, stdout, stderr) => {
+        if (error) {
+            callback(new Error(stderr || error.toString()));
+            return;
+        }
+        callback(null, String(stdout || '').trim());
+    });
 }
 
 function toPublicEnvelope(normalizedEnvelope, settings) {
@@ -501,10 +549,6 @@ function handleGeneratePlan(req, res) {
             sendBadRequest(res, 'prompt is required and must be a string');
             return;
         }
-        if (!payload.apiKey || typeof payload.apiKey !== 'string') {
-            sendBadRequest(res, 'apiKey is required and must be a string');
-            return;
-        }
         const model = payload.model && typeof payload.model === 'string'
             ? payload.model
             : 'gpt-5-mini';
@@ -522,8 +566,8 @@ function handleGeneratePlan(req, res) {
                     sendBridgeParseError(res, snapshotResult, error);
                     return;
                 }
-                const promptText = buildOpenAIPlanningPrompt(payload.prompt, snapshot, agentSettings);
-                requestOpenAIPlan(payload.apiKey, model, promptText, (error, modelPlan) => {
+                const promptText = buildCodexPlanningPrompt(payload.prompt, snapshot, agentSettings);
+                runCodexPlanner(promptText, model, (error, modelPlan) => {
                     if (error) {
                         sendJson(res, 500, { status: 'error', message: error.toString() });
                         return;
@@ -573,6 +617,16 @@ function handleGeneratePlan(req, res) {
     });
 }
 
+function handleCodexStatus(res) {
+    getCodexLoginStatus((error, statusText) => {
+        if (error) {
+            sendJson(res, 500, { status: 'error', message: error.toString() });
+            return;
+        }
+        sendJson(res, 200, { status: 'success', data: { statusText } });
+    });
+}
+
 function routeAgentRequest(pathname, method, req, res) {
     if (pathname === '/agent/settings' && method === 'GET') {
         handleGetAgentSettings(res);
@@ -596,6 +650,10 @@ function routeAgentRequest(pathname, method, req, res) {
     }
     if (pathname === '/agent/generate-plan' && method === 'POST') {
         handleGeneratePlan(req, res);
+        return true;
+    }
+    if (pathname === '/agent/codex-status' && method === 'GET') {
+        handleCodexStatus(res);
         return true;
     }
     return false;

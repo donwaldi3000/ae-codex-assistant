@@ -2,6 +2,8 @@ let http = null;
 let https = null;
 let path = null;
 let fs = null;
+let os = null;
+let childProcess = null;
 let nodeReady = true;
 let nodeInitError = null;
 
@@ -10,6 +12,8 @@ try {
     https = require('https');
     path = require('path');
     fs = require('fs');
+    os = require('os');
+    childProcess = require('child_process');
 } catch (e) {
     nodeReady = false;
     nodeInitError = e;

@@ -215,13 +215,12 @@
             <h2>Agent Prompt</h2>
             <div class="panel-body">
                 <div class="row wrap">
-                    <label for="openai-model">Model</label>
-                    <input id="openai-model" type="text" value="gpt-5-mini" />
+                    <label for="codex-model">Codex Model</label>
+                    <input id="codex-model" type="text" value="gpt-5-mini" />
                 </div>
                 <div class="row wrap">
-                    <label for="openai-key">OpenAI API Key</label>
-                    <input id="openai-key" type="password" placeholder="sk-..." />
-                    <label><input type="checkbox" id="remember-key" /> Remember locally</label>
+                    <button id="check-codex-login">Check Codex Login</button>
+                    <span id="codex-login-status">Status unknown</span>
                 </div>
                 <label for="prompt">Task</label>
                 <textarea id="prompt" placeholder="Example: Build a 2D controller rig for selected layers and fix expression errors."></textarea>
