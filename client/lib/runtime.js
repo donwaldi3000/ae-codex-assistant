@@ -1,4 +1,5 @@
 let http = null;
+let https = null;
 let path = null;
 let fs = null;
 let nodeReady = true;
@@ -6,6 +7,7 @@ let nodeInitError = null;
 
 try {
     http = require('http');
+    https = require('https');
     path = require('path');
     fs = require('fs');
 } catch (e) {

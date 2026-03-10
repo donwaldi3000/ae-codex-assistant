@@ -54,6 +54,7 @@ The panel now exposes risk/scope controls and the bridge provides structured exe
 - `POST /agent/project-find`
 - `GET/POST /agent/settings`
 - `POST /agent/execute`
+- `POST /agent/generate-plan` (OpenAI-backed prompt -> operation envelopes)
 
 Supported command envelope `command` values:
 

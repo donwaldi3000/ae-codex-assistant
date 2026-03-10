@@ -342,6 +342,237 @@ function handleExecuteAgentCommand(req, res) {
     });
 }
 
+function readResponseBody(response, callback) {
+    let raw = '';
+    response.on('data', (chunk) => {
+        raw += chunk.toString();
+    });
+    response.on('end', () => {
+        callback(raw);
+    });
+}
+
+function parseOpenAIPlanPayload(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+    if (typeof payload.output_text === 'string' && payload.output_text.trim().length > 0) {
+        return payload.output_text.trim();
+    }
+    if (Array.isArray(payload.output)) {
+        let textOut = '';
+        for (let i = 0; i < payload.output.length; i += 1) {
+            const entry = payload.output[i];
+            if (!entry || !Array.isArray(entry.content)) continue;
+            for (let j = 0; j < entry.content.length; j += 1) {
+                const item = entry.content[j];
+                if (item && typeof item.text === 'string') {
+                    textOut += item.text;
+                }
+            }
+        }
+        if (textOut.trim().length > 0) {
+            return textOut.trim();
+        }
+    }
+    return null;
+}
+
+function parseJsonFromModelText(rawText) {
+    if (!rawText || typeof rawText !== 'string') return null;
+    const trimmed = rawText.trim();
+    try {
+        return JSON.parse(trimmed);
+    } catch (error) {}
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced && fenced[1]) {
+        try {
+            return JSON.parse(fenced[1].trim());
+        } catch (error) {}
+    }
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        try {
+            return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+        } catch (error) {}
+    }
+    return null;
+}
+
+function buildOpenAIPlanningPrompt(userPrompt, snapshot, settings) {
+    const compactSnapshot = JSON.stringify(snapshot);
+    const snapshotMaxChars = 120000;
+    const snapshotText = compactSnapshot.length > snapshotMaxChars
+        ? compactSnapshot.slice(0, snapshotMaxChars) + '...'
+        : compactSnapshot;
+
+    return [
+        'You are an After Effects agent planner.',
+        'Return ONLY JSON with this exact top-level shape:',
+        '{"summary":"...","operations":[{"command":"...","scope":"Selection|ActiveComp|Project","payload":{}}]}',
+        'Allowed command values only:',
+        'project.scan, project.find, expression.set, expression.fix, rig.create2D, layers.batchRename, comp.precomp, render.setupQueue',
+        'Do not include markdown, prose, comments, or unsupported commands.',
+        `Risk mode: ${settings.riskMode}, scope default: ${settings.scope}.`,
+        'User request:',
+        userPrompt,
+        'Project snapshot JSON:',
+        snapshotText,
+    ].join('\n');
+}
+
+function requestOpenAIPlan(apiKey, model, promptText, callback) {
+    const payload = JSON.stringify({
+        model,
+        input: promptText,
+    });
+    const request = https.request(
+        {
+            hostname: 'api.openai.com',
+            path: '/v1/responses',
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload),
+            },
+        },
+        (response) => {
+            readResponseBody(response, (body) => {
+                if (response.statusCode && response.statusCode >= 400) {
+                    callback(new Error(`OpenAI API error (${response.statusCode}): ${body}`));
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(body);
+                } catch (error) {
+                    callback(new Error(`Failed to parse OpenAI response JSON: ${error.toString()}`));
+                    return;
+                }
+                const modelText = parseOpenAIPlanPayload(parsed);
+                if (!modelText) {
+                    callback(new Error('OpenAI response did not include output text.'));
+                    return;
+                }
+                const planObject = parseJsonFromModelText(modelText);
+                if (!planObject) {
+                    callback(new Error('Model output was not valid JSON plan.'));
+                    return;
+                }
+                callback(null, planObject);
+            });
+        },
+    );
+    request.on('error', (error) => callback(error));
+    request.write(payload);
+    request.end();
+}
+
+function toPublicEnvelope(normalizedEnvelope, settings) {
+    const requiresApproval = normalizedEnvelope.explicitRequiresApproval === true
+        ? true
+        : computeRequiresApproval(
+            settings.riskMode,
+            normalizedEnvelope.risk,
+            normalizedEnvelope.isWrite,
+            settings.approvalOverride,
+            normalizedEnvelope.bulkCount,
+        );
+    return {
+        id: normalizedEnvelope.id,
+        command: normalizedEnvelope.command,
+        scope: normalizedEnvelope.scope,
+        risk: normalizedEnvelope.risk,
+        requiresApproval,
+        payload: normalizedEnvelope.payload,
+    };
+}
+
+function handleGeneratePlan(req, res) {
+    readJsonBody(req, res, (body) => {
+        const payload = parseAgentPayload(body);
+        if (!payload) {
+            sendBadRequest(res, 'Body must be an object');
+            return;
+        }
+        if (!payload.prompt || typeof payload.prompt !== 'string') {
+            sendBadRequest(res, 'prompt is required and must be a string');
+            return;
+        }
+        if (!payload.apiKey || typeof payload.apiKey !== 'string') {
+            sendBadRequest(res, 'apiKey is required and must be a string');
+            return;
+        }
+        const model = payload.model && typeof payload.model === 'string'
+            ? payload.model
+            : 'gpt-5-mini';
+        const scope = payload.scope && isAllowedScope(payload.scope)
+            ? payload.scope
+            : agentSettings.scope;
+        evalAgentHostFunction(
+            'getProjectSnapshot',
+            [JSON.stringify({ scope, includeExpressions: true })],
+            (snapshotResult) => {
+                let snapshot;
+                try {
+                    snapshot = parseBridgeResult(snapshotResult);
+                } catch (error) {
+                    sendBridgeParseError(res, snapshotResult, error);
+                    return;
+                }
+                const promptText = buildOpenAIPlanningPrompt(payload.prompt, snapshot, agentSettings);
+                requestOpenAIPlan(payload.apiKey, model, promptText, (error, modelPlan) => {
+                    if (error) {
+                        sendJson(res, 500, { status: 'error', message: error.toString() });
+                        return;
+                    }
+                    const operationsRaw = modelPlan && Array.isArray(modelPlan.operations)
+                        ? modelPlan.operations
+                        : [];
+                    const operations = [];
+                    const rejectedOperations = [];
+                    for (let i = 0; i < operationsRaw.length; i += 1) {
+                        const candidate = operationsRaw[i];
+                        const withDefaults = {
+                            id: candidate && candidate.id ? candidate.id : `op_gen_${Date.now()}_${i + 1}`,
+                            command: candidate ? candidate.command : null,
+                            scope: candidate && candidate.scope ? candidate.scope : scope,
+                            payload: candidate && candidate.payload && typeof candidate.payload === 'object'
+                                ? candidate.payload
+                                : {},
+                            risk: candidate ? candidate.risk : undefined,
+                            requiresApproval: candidate ? candidate.requiresApproval : undefined,
+                        };
+                        const normalized = normalizeCommandEnvelope(withDefaults);
+                        if (!normalized.ok) {
+                            rejectedOperations.push({
+                                index: i,
+                                reason: normalized.error,
+                                raw: candidate,
+                            });
+                            continue;
+                        }
+                        operations.push(toPublicEnvelope(normalized.value, agentSettings));
+                    }
+                    sendJson(res, 200, {
+                        status: 'success',
+                        data: {
+                            model,
+                            summary: modelPlan && typeof modelPlan.summary === 'string'
+                                ? modelPlan.summary
+                                : 'Generated operation plan.',
+                            operations,
+                            rejectedOperations,
+                        },
+                    });
+                });
+            },
+        );
+    });
+}
+
 function routeAgentRequest(pathname, method, req, res) {
     if (pathname === '/agent/settings' && method === 'GET') {
         handleGetAgentSettings(res);
@@ -361,6 +592,10 @@ function routeAgentRequest(pathname, method, req, res) {
     }
     if (pathname === '/agent/execute' && method === 'POST') {
         handleExecuteAgentCommand(req, res);
+        return true;
+    }
+    if (pathname === '/agent/generate-plan' && method === 'POST') {
+        handleGeneratePlan(req, res);
         return true;
     }
     return false;

@@ -68,3 +68,6 @@ Cross-platform bootstrap helpers:
 - `client/lib/request_handlers_agent.js`
 - `client/lib/request_handlers.js`
 - `client/lib/server.js`
+
+`/agent/generate-plan` uses the OpenAI Responses API from the local CEP bridge.
+The panel can optionally persist API key locally for personal-use workflows.
